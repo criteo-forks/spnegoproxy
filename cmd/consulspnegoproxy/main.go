@@ -71,10 +71,19 @@ func main() {
 	errorCount := 0
 	defer connListener.Close()
 	for {
+		if errorCount > 1 {
+			logger.Print("Renewing SPN client with new host because we had more than 1 error")
+			spnegoClient, _, realHost, err = spnegoproxy.BuildSPNClient(realHosts, kclient, *spnServiceType)
+			if err != nil {
+				log.Panic("Cannot get SPN client for service after error, failing")
+			}
+			logger.Printf("Now dealing with host %s for next connections\n", realHost)
+		}
 		conn, err := connListener.AcceptTCP()
 		if err != nil {
 			logger.Panic(err)
 		}
+
 		go spnegoproxy.HandleClient(conn, realHost, spnegoClient, *debug, &errorCount)
 	}
 }
