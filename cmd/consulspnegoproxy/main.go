@@ -5,12 +5,15 @@ import (
 	"log"
 	"net"
 	"os"
+	"time"
 
 	"github.com/matchaxnb/gokrb5/v8/client"
 	"github.com/matchaxnb/spnegoproxy/spnegoproxy"
 )
 
 var logger = log.New(os.Stderr, "", log.LstdFlags)
+
+const ACCEPTABLE_CONSUL_ERRORS = 1
 
 func main() {
 	addr := flag.String("addr", "0.0.0.0:50070", "bind address")
@@ -27,6 +30,7 @@ func main() {
 	metricsAddrS := flag.String("metrics-addr", "", "optional address to expose a prometheus metrics endpoint")
 	debug := flag.Bool("debug", true, "turn on debugging")
 	flag.Parse()
+	spnegoproxy.DEBUGGING = *debug // enable or disable debugging
 	keytab, conf := spnegoproxy.LoadKrb5Config(keytabFile, cfgFile)
 
 	consulClient := spnegoproxy.BuildConsulClient(consulAddress, consulToken)
@@ -34,8 +38,9 @@ func main() {
 	kclient := client.NewWithKeytab(*user, *realm, keytab, conf, client.Logger(logger), client.DisablePAFXFAST(false))
 	kclient.Login()
 	spnegoClient, spnEnabled, realHost, err := spnegoproxy.BuildSPNClient(realHosts, kclient, *spnServiceType)
+
 	if err != nil {
-		logger.Panic("Cannot get SPN for service, failing")
+		logger.Panic("Cannot get SPN for service in the first place, failing")
 	}
 	_, _, err = kclient.GetServiceTicket(spnEnabled)
 	if err != nil {
@@ -63,19 +68,31 @@ func main() {
 	}
 
 	if *dropUsername {
-		spnegoproxy.DropUsername(*debug)
+		spnegoproxy.DropUsername()
 	} else if len(*properUsername) > 0 {
-		spnegoproxy.EnforceUserName(*properUsername, *debug)
+		spnegoproxy.EnforceUserName(*properUsername)
 	}
 
 	errorCount := 0
+	preFail := 0
 	defer connListener.Close()
 	for {
 		if errorCount > 1 {
 			logger.Print("Renewing SPN client with new host because we had more than 1 error")
-			spnegoClient, _, realHost, err = spnegoproxy.BuildSPNClient(realHosts, kclient, *spnServiceType)
-			if err != nil {
-				log.Panic("Cannot get SPN client for service after error, failing")
+			for {
+				spnegoClient, _, realHost, err = spnegoproxy.BuildSPNClient(realHosts, kclient, *spnServiceType)
+				if err != nil && preFail <= ACCEPTABLE_CONSUL_ERRORS {
+					logger.Println("Cannot get SPN client for service after error, sleeping before we retry")
+					time.Sleep(30 * time.Second)
+					preFail += 1
+				} else if err != nil && preFail >= ACCEPTABLE_CONSUL_ERRORS {
+					logger.Fatalf("cannot get valid hostname for consul service after %d tries, exiting.\n", ACCEPTABLE_CONSUL_ERRORS)
+				}
+				if err == nil {
+					logger.Printf("SPNEGOClient built successfully after %d errors, moving on\n", preFail)
+					preFail = 0 // now we're in the happy case
+					break
+				}
 			}
 			logger.Printf("Now dealing with host %s for next connections\n", realHost)
 		}
@@ -84,6 +101,6 @@ func main() {
 			logger.Panic(err)
 		}
 
-		go spnegoproxy.HandleClient(conn, realHost, spnegoClient, *debug, &errorCount)
+		go spnegoproxy.HandleClient(conn, realHost, spnegoClient, &errorCount)
 	}
 }

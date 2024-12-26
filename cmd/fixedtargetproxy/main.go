@@ -25,6 +25,7 @@ func main() {
 	metricsAddrS := flag.String("metrics-addr", "", "optional address to expose a prometheus metrics endpoint")
 	debug := flag.Bool("debug", true, "turn on debugging")
 	flag.Parse()
+	spnegoproxy.DEBUGGING = *debug
 	keytab, conf := spnegoproxy.LoadKrb5Config(keytabFile, cfgFile)
 
 	toProxyAsList := spnegoproxy.HostnameToChanHostPort(*toProxy)
@@ -59,9 +60,9 @@ func main() {
 	}
 
 	if *dropUsername {
-		spnegoproxy.DropUsername(*debug)
+		spnegoproxy.DropUsername()
 	} else if len(*properUsername) > 0 {
-		spnegoproxy.EnforceUserName(*properUsername, *debug)
+		spnegoproxy.EnforceUserName(*properUsername)
 	}
 	errorCount := 0
 	defer connListener.Close()
@@ -70,6 +71,6 @@ func main() {
 		if err != nil {
 			logger.Panic(err)
 		}
-		go spnegoproxy.HandleClient(conn, realHost, spnegoClient, *debug, &errorCount)
+		go spnegoproxy.HandleClient(conn, realHost, spnegoClient, &errorCount)
 	}
 }

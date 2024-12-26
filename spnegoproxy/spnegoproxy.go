@@ -24,6 +24,7 @@ import (
 )
 
 var logger = log.New(os.Stderr, "[spnegoproxy]", log.LstdFlags)
+var DEBUGGING bool = false
 
 const MAX_ERROR_COUNT = 20
 const PAUSE_TIME_WHEN_ERROR = time.Minute * 1
@@ -43,6 +44,17 @@ func (e HostPort) f() string {
 	return fmt.Sprintf("%s:%d", e.Host, e.Port)
 }
 
+func _debugprintf(should bool, format string, a ...any) {
+	if !should {
+		return
+	}
+	log.Printf(format, a...)
+}
+
+func debugprintf(format string, a ...any) {
+	_debugprintf(DEBUGGING, format, a...)
+}
+
 func BuildConsulClient(consulAddress *string, consulToken *string) *capi.Client {
 	consulClient, err := capi.NewClient(&capi.Config{Address: *consulAddress, Scheme: "http", Token: *consulToken})
 	if err != nil {
@@ -51,14 +63,27 @@ func BuildConsulClient(consulAddress *string, consulToken *string) *capi.Client 
 	return consulClient
 }
 
+// this builds a SPN client for the *last* valid host in the validHosts channel.
 func BuildSPNClient(validHosts chan []HostPort, krbClient *client.Client, serviceType string) (spnClient *SPNEGOClient, realSpn string, realHost string, err error) {
-	// pick the first valid host from our chan
-	logger.Print("Building a spn client")
-	spnHost := <-validHosts
-	spnStr := fmt.Sprintf("%s/%s", serviceType, spnHost[0].Host)
+
+	logger.Print("BuildSPNClient: Building a spn client")
+	var spnHosts []HostPort
+
+	// this eager loop loops until we have a valid element
+	found := false
+	for !found {
+		select {
+		case el := <-validHosts:
+			spnHosts = el
+		default:
+			found = len(spnHosts) > 0
+		}
+	}
+	logger.Printf("BuildSPNClient: SPN client built for known good host %s\n", spnHosts[0].f())
+	spnStr := fmt.Sprintf("%s/%s", serviceType, spnHosts[0].Host)
 	return &SPNEGOClient{
 		Client: spnego.SPNEGOClient(krbClient, spnStr),
-	}, spnStr, spnHost[0].f(), nil
+	}, spnStr, spnHosts[0].f(), nil
 }
 
 func LoadKrb5Config(keytabFile *string, cfgFile *string) (*keytab.Keytab, *config.Config) {
@@ -109,22 +134,35 @@ func HostnameToChanHostPort(hostname string) chan []HostPort {
 }
 
 func StartConsulGetService(client *capi.Client, serviceName string) chan []HostPort {
-	messages := make(chan []HostPort)
+	messages := make(chan []HostPort, 1) // make that a buffered channel with maximum 1 message in the backlog
 	serviceFunc := func(client *capi.Client, serviceName string, messages chan []HostPort) {
-		healthyServices, meta, err := client.Health().Service(serviceName, "", true, &capi.QueryOptions{})
-		if err != nil {
-			logger.Printf("Cannot get healthy services for %#v (response meta: %#v) because of a consul error: %s", serviceName, meta, err)
-			return
+		for {
+			healthyServices, meta, err := client.Health().Service(serviceName, "", true, &capi.QueryOptions{})
+			if err != nil {
+				logger.Printf("Cannot get healthy services for %#v (response meta: %#v) because of a consul error: %s", serviceName, meta, err)
+				return
+			}
+			healthyStrings := make([]HostPort, len(healthyServices))
+			for i := range healthyServices {
+				debugprintf("Adding healthy service: %#v\n", healthyServices[i].Node.Meta["fqdn"])
+				healthyStrings[i] = HostPort{healthyServices[i].Node.Meta["fqdn"], healthyServices[i].Service.Port}
+			}
+			// flush existing messages because they're no longer relevant
+			// we know there's a single writer to messages because we're it and we made it, so it's easy to flush
+			if len(messages) > 0 {
+				counter := 0
+				for range messages {
+					counter += 1
+					debugprintf("StartConsulGetService: Flushing message #%d", counter)
+				}
+			}
+			messages <- healthyStrings
+			debugprintf("ConsulGetService: added %d elements, now sleeping for 30 seconds\n", len(healthyStrings))
+			time.Sleep(time.Second * 30)
 		}
-		healthyStrings := make([]HostPort, len(healthyServices))
-		for i := range healthyServices {
-			log.Printf("Service: %#v\n", healthyServices[i].Node.Meta["fqdn"])
-			healthyStrings[i] = HostPort{healthyServices[i].Node.Meta["fqdn"], healthyServices[i].Service.Port}
-		}
-		messages <- healthyStrings
-		time.Sleep(time.Second * 30)
 	}
 	go serviceFunc(client, serviceName, messages)
+	logger.Print("Started ConsulGetService")
 	return messages
 }
 
@@ -134,19 +172,14 @@ func enforceUserName(properUsername string, req *http.Request) {
 		q.Set("user.name", properUsername)
 		req.URL.RawQuery = q.Encode()
 	}
+	debugprintf("[DEBUG] EnforceUserName, now request is %s\n", req.URL.RawQuery)
 }
 
-func EnforceUserName(properUsername string, debug bool) {
-	if !debug {
-		RegisterRequestInspectionCallback(func(r *http.Request) {
-			enforceUserName(properUsername, r)
-		})
-	} else {
-		RegisterRequestInspectionCallback(func(r *http.Request) {
-			enforceUserName(properUsername, r)
-			logger.Printf("[DEBUG] EnforceUserName, now request is %s", r.URL.RawQuery)
-		})
-	}
+func EnforceUserName(properUsername string) {
+
+	RegisterRequestInspectionCallback(func(r *http.Request) {
+		enforceUserName(properUsername, r)
+	})
 
 }
 
@@ -154,54 +187,45 @@ func dropUsername(req *http.Request) {
 	q := req.URL.Query()
 	q.Del("user.name")
 	req.URL.RawQuery = q.Encode()
+	debugprintf("[DEBUG] DropUsername, now request is %s", req.URL.RawQuery)
 }
 
-func DropUsername(debug bool) {
-	if !debug {
-		RegisterRequestInspectionCallback(dropUsername)
-	} else {
-		RegisterRequestInspectionCallback(func(req *http.Request) {
-			dropUsername(req)
-			logger.Printf("[DEBUG] DropUsername, now request is %s", req.URL.RawQuery)
-		})
-	}
+func DropUsername() {
+	RegisterRequestInspectionCallback(dropUsername)
 }
 
-func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, debug bool, errCount *int) {
+func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, errCount *int) {
 
 	if *errCount > MAX_ERROR_COUNT {
 		log.Fatalf("Too many errors (%d), exiting", *errCount)
 	}
-	if debug {
-		logger.Printf("new client: %v", conn.RemoteAddr())
-		defer logger.Printf("stop processing request for client: %v", conn.RemoteAddr())
 
-	}
+	debugprintf("new client: %v", conn.RemoteAddr())
+	defer debugprintf("stop processing request for client: %v", conn.RemoteAddr())
+
 	defer conn.Close()
 	proxyAddr, err := net.ResolveTCPAddr("tcp", proxyHost)
 	if err != nil {
-		logger.Panicf("Cannot resolve proxy hostname %s -> %s", proxyHost, err)
+		logger.Printf("Cannot resolve proxy hostname %s -> %s", proxyHost, err)
+		*errCount += 1
+		return
 	}
 
 	proxyConn, err := net.DialTCP("tcp", nil, proxyAddr)
 	if err != nil {
-		logger.Panicf("failed to connect to proxy: %v", err)
+		logger.Printf("failed to connect to proxy: %v", err)
+		*errCount += 1
 		return
 	}
 	defer proxyConn.Close()
 	reqReader := bufio.NewReader(conn)
 
-	/*if debug {
-		reqReader = bufio.NewReader(io.TeeReader(conn, os.Stdout))
-	}*/
-
 	// get the SPNEGO token that we will use for this client
 
-	if debug {
-		if spnegoCli == nil {
-			logger.Print("no SPNEGO client is set, so no Kerberos auth happening (this is fine)")
-		}
+	if spnegoCli == nil {
+		debugprintf("no SPNEGO client is set, so no Kerberos auth happening (this is fine)")
 	}
+
 	processedCounter := 0
 	var wg sync.WaitGroup
 	for {
@@ -216,20 +240,19 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 			break
 		} else if errors.Is(err, io.EOF) {
 			// just a simple break
-			if debug {
-				logger.Printf("EOF reached, breaking")
-			}
+
+			debugprintf("EOF reached, breaking")
 			break
 		} else if err != nil {
 			logger.Printf("Could not get request, will break: %v", err)
 			break
 		}
-		if debug {
-			logger.Printf("Read request: %s", req.URL)
-		}
+
+		debugprintf("Read request: %s", req.URL)
+
 		req.Host = proxyHost
 		req.Header.Set("User-agent", "hadoop-proxy/0.1")
-                req.Close = true
+		req.Close = true
 		handleRequestCallbacks(req) // needs to be synchronous
 		req.WriteProxy(proxyConn)
 
@@ -238,10 +261,10 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 			// defer to.CloseWrite()
 			fromAddr, toAddr := from.RemoteAddr(), to.RemoteAddr()
 			if !isResponse {
-				logger.Printf("[%s] request %s -> %s\n", tag, fromAddr, toAddr)
+				debugprintf("[%s] request %s -> %s\n", tag, fromAddr, toAddr)
 				io.Copy(to, from) // this is optimized but removes control
 			} else {
-				logger.Printf("[%s] response %s -> %s\n", tag, fromAddr, toAddr)
+				debugprintf("[%s] response %s -> %s\n", tag, fromAddr, toAddr)
 				// read the from
 				resReader := bufio.NewReader(from)
 
@@ -249,12 +272,12 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 				if err != nil {
 					logger.Panicf("[%s] Could not read response: %s", tag, err)
 				}
+				// is that needed?
 				res.Header.Del("Www-Authenticate")
 				res.Header.Del("Set-Cookie")
 				res.Write(to)
 			}
 			logger.Printf("[%s] written\n", tag)
-			//from.CloseRead()
 			to.CloseWrite()
 
 		}
@@ -266,7 +289,7 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 		processedCounter += 1
 	}
 	wg.Wait()
-	logger.Printf("[ProcessedCounter] Handled %d requests\n", processedCounter)
+	debugprintf("[ProcessedCounter] Handled %d requests\n", processedCounter)
 }
 
 func readRequestAndSetAuthorization(reqReader *bufio.Reader, spnegoCli *SPNEGOClient) (*http.Request, error) {
