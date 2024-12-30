@@ -228,7 +228,9 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 
 	processedCounter := 0
 	var wg sync.WaitGroup
-	for {
+	pleaseBreak := false
+	for !pleaseBreak {
+
 		req, err := readRequestAndSetAuthorization(reqReader, spnegoCli)
 		if err != nil && !errors.Is(err, io.EOF) {
 			logger.Printf("failed to read request or to get SPNEGO token: %v", err)
@@ -260,10 +262,11 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 			defer wg.Done()
 			// defer to.CloseWrite()
 			fromAddr, toAddr := from.RemoteAddr(), to.RemoteAddr()
+			// handle request: a simple passthrough
 			if !isResponse {
 				debugprintf("[%s] request %s -> %s\n", tag, fromAddr, toAddr)
 				io.Copy(to, from) // this is optimized but removes control
-			} else {
+			} else { // handle response, slightly more complex
 				debugprintf("[%s] response %s -> %s\n", tag, fromAddr, toAddr)
 				// read the from
 				resReader := bufio.NewReader(from)
@@ -271,6 +274,12 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 				res, err := http.ReadResponse(resReader, nil)
 				if err != nil {
 					logger.Panicf("[%s] Could not read response: %s", tag, err)
+				}
+				if res.StatusCode > 400 {
+					*errCount += 1
+					pleaseBreak = true // latch pleaseBreak, this is going to stop processing.
+				} else {
+					*errCount = 0
 				}
 				// is that needed?
 				res.Header.Del("Www-Authenticate")
@@ -284,8 +293,6 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 		wg.Add(2)
 		go forward(conn, proxyConn, "local to proxied", false)
 		go forward(proxyConn, conn, "proxied to local", true)
-
-		*errCount = 0
 		processedCounter += 1
 	}
 	wg.Wait()

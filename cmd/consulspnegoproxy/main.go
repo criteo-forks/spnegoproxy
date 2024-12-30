@@ -14,6 +14,7 @@ import (
 var logger = log.New(os.Stderr, "", log.LstdFlags)
 
 const ACCEPTABLE_CONSUL_ERRORS = 1
+const MAXIMUM_OVERALL_ERRORS = 10
 
 func main() {
 	addr := flag.String("addr", "0.0.0.0:50070", "bind address")
@@ -74,6 +75,7 @@ func main() {
 	}
 
 	errorCount := 0
+	overallErrorCount := 0
 	preFail := 0
 	defer connListener.Close()
 	for {
@@ -94,6 +96,8 @@ func main() {
 					break
 				}
 			}
+			overallErrorCount += errorCount // transfer the error count to that overall counter
+			errorCount = 0                  // reset the error counter for the time being
 			logger.Printf("Now dealing with host %s for next connections\n", realHost)
 		}
 		conn, err := connListener.AcceptTCP()
@@ -102,5 +106,8 @@ func main() {
 		}
 
 		go spnegoproxy.HandleClient(conn, realHost, spnegoClient, &errorCount)
+		if MAXIMUM_OVERALL_ERRORS <= overallErrorCount {
+			logger.Fatalf("Reached error count %d > %d, exiting.\n", overallErrorCount, MAXIMUM_OVERALL_ERRORS)
+		}
 	}
 }
