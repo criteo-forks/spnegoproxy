@@ -13,6 +13,9 @@ jobs:
       contents: read
       attestations: write
       id-token: write
+    env:
+      REGISTRY: docker.io
+      IMAGE_NAME: matchalunatic/spnegoproxy-criteo-fork
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4
@@ -27,7 +30,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
         with:
-          images: matchalunatic/spnegoproxy-criteo-fork
+          images: ${{ env.IMAGE_NAME }}
 
       - name: Build and push Docker image
         id: push

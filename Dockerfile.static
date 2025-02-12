@@ -6,7 +6,7 @@ COPY spnegoproxy ./spnegoproxy/
 WORKDIR /src/cmd/consulspnegoproxy
 RUN go mod tidy
 RUN grep "replace github.com/matchaxnb/spnego" go.mod || "replace %s => ../../spnegoproxy" "$(egrep -o 'github.com/matchaxnb/spnegoproxy/spnegoproxy v.*' go.mod)" | tee -a go.mod
-RUN export CGO_ENABLED=0 && go build -o /spnego-proxy .
+RUN go build -o /spnego-proxy -ldflags '-linkmode external -extldflags "-fno-PIC -static"' .
 FROM alpine:latest
 WORKDIR /data
 COPY --from=0 /spnego-proxy /spnego-proxy
