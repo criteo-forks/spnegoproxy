@@ -16,8 +16,8 @@ ENV LISTEN_ADDRESS="0.0.0.0:50070" KRB5_CONF="/data/krb5.conf" \
     CONSUL_ADDRESS="your.consul.address" \
     CONSUL_SERVICE_TO_PROXY="your-consul-service" \
     SPN_SERVICE_TYPE="HTTP" APP_DEBUG="false" \
-    METRICS_ADDRESS="0.0.0.0:9100" PROPER_USER_NAME="" \
-    DROP_USER_NAME="false"
+    METRICS_ADDRESS="0.0.0.0:9100" PROPER_USERNAME="" \
+    DROP_USERNAME="false"
 SHELL [ "/bin/sh", "-c"]
 EXPOSE 50070
 COPY startup.sh /startup.sh

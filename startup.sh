@@ -1,5 +1,19 @@
 #!/bin/sh
-set -x
+set -x -e
+OPTIONS=""
+
+if [ "$DROP_USERNAME" = "true" ]; then
+  OPTIONS="$OPTIONS -drop-username"
+fi
+
+if [ "$DEBUG" = "true" ]; then
+  OPTIONS="$OPTIONS -debug"
+fi
+
+if [ ! -z "$PROPER_USERNAME" ]; then
+  OPTIONS="$OPTIONS -proper-username $PROPER_USERNAME"
+fi
+
 /spnego-proxy \
   -addr "${LISTEN_ADDRESS}" \
   -metrics-addr "${METRICS_ADDRESS}" \
@@ -10,6 +24,4 @@ set -x
   -proxy-service "${CONSUL_SERVICE_TO_PROXY}" \
   -spn-service-type "${SPN_SERVICE_TYPE}" \
   -keytab-file "${KRB5_KEYTAB}" \
-  -proper-username "${PROPER_USERNAME}" \
-  -drop-username "${DROP_USERNAME}" \
-  -debug "${APP_DEBUG}"
+  $OPTIONS
