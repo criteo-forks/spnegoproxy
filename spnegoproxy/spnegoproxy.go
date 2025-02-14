@@ -134,9 +134,10 @@ func HostnameToChanHostPort(hostname string) chan []HostPort {
 }
 
 func StartConsulGetService(client *capi.Client, serviceName string) chan []HostPort {
-	messages := make(chan []HostPort, 1) // make that a buffered channel with maximum 1 message in the backlog
+	messages := make(chan []HostPort, 8) // make that a buffered channel with maximum 8 messages in the backlog (in case we do something very wrong)
 	serviceFunc := func(client *capi.Client, serviceName string, messages chan []HostPort) {
 		for {
+			debugprintf("ConsulGetService: begin loop\n")
 			healthyServices, meta, err := client.Health().Service(serviceName, "", true, &capi.QueryOptions{})
 			if err != nil {
 				logger.Printf("Cannot get healthy services for %#v (response meta: %#v) because of a consul error: %s", serviceName, meta, err)
@@ -153,7 +154,7 @@ func StartConsulGetService(client *capi.Client, serviceName string) chan []HostP
 				counter := 0
 				for range messages {
 					counter += 1
-					debugprintf("StartConsulGetService: Flushing message #%d", counter)
+					debugprintf("ConsulGetService: Flushing message #%d", counter)
 				}
 			}
 			messages <- healthyStrings
@@ -275,7 +276,8 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 				if err != nil {
 					logger.Panicf("[%s] Could not read response: %s", tag, err)
 				}
-				if res.StatusCode > 400 {
+				if res.StatusCode > 400 && res.StatusCode != 404 {
+					debugprintf("Bad status code %d -> %v", res.StatusCode, res)
 					*errCount += 1
 					pleaseBreak = true // latch pleaseBreak, this is going to stop processing.
 				} else {
@@ -295,8 +297,9 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 		go forward(proxyConn, conn, "proxied to local", true)
 		processedCounter += 1
 	}
+	debugprintf("Entering wg.Wait\n")
 	wg.Wait()
-	debugprintf("[ProcessedCounter] Handled %d requests\n", processedCounter)
+	debugprintf("[ProcessedCounter] Done waiting. Handled %d requests\n", processedCounter)
 }
 
 func readRequestAndSetAuthorization(reqReader *bufio.Reader, spnegoCli *SPNEGOClient) (*http.Request, error) {
