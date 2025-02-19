@@ -14,6 +14,10 @@ if [ ! -z "$PROPER_USERNAME" ]; then
   OPTIONS="$OPTIONS -proper-username $PROPER_USERNAME"
 fi
 
+if [ "$DISABLE_PAX_FAST" = "true" ]; then
+  OPTIONS="$OPTIONS -disable-pax-fast"
+fi
+
 /spnego-proxy \
   -addr "${LISTEN_ADDRESS}" \
   -metrics-addr "${METRICS_ADDRESS}" \

@@ -30,13 +30,14 @@ func main() {
 	dropUsername := flag.Bool("drop-username", false, "drop user.name from all queries")
 	metricsAddrS := flag.String("metrics-addr", "", "optional address to expose a prometheus metrics endpoint")
 	debug := flag.Bool("debug", true, "turn on debugging")
+	disablePaxFast := flag.Bool("disable-pax-fast", false, "disable PAX fast, useful in some cases with Active Directory")
 	flag.Parse()
 	spnegoproxy.DEBUGGING = *debug // enable or disable debugging
 	keytab, conf := spnegoproxy.LoadKrb5Config(keytabFile, cfgFile)
 
 	consulClient := spnegoproxy.BuildConsulClient(consulAddress, consulToken)
 	realHosts := spnegoproxy.StartConsulGetService(consulClient, *proxy)
-	kclient := client.NewWithKeytab(*user, *realm, keytab, conf, client.Logger(logger), client.DisablePAFXFAST(false))
+	kclient := client.NewWithKeytab(*user, *realm, keytab, conf, client.Logger(logger), client.DisablePAFXFAST(*disablePaxFast))
 	kclient.Login()
 	spnegoClient, spnEnabled, realHost, err := spnegoproxy.BuildSPNClient(realHosts, kclient, *spnServiceType)
 
