@@ -83,6 +83,9 @@ func main() {
 		if errorCount > 1 {
 			logger.Print("Renewing SPN client with new host because we had more than 1 error")
 			for {
+				logger.Print("Destroying old Kerberos client to force renewal")
+				kclient.Destroy()
+				logger.Print("Performing login again")
 				kclient.Login()
 				spnegoClient, _, realHost, err = spnegoproxy.BuildSPNClient(realHosts, kclient, *spnServiceType)
 				if err != nil && preFail <= ACCEPTABLE_CONSUL_ERRORS {

@@ -67,6 +67,24 @@ func main() {
 	errorCount := 0
 	defer connListener.Close()
 	for {
+		if errorCount > 1 {
+			logger.Print("Renewing SPN client with new host because we had more than 1 error")
+			for {
+				logger.Print("Destroying old Kerberos client to force renewal")
+				kclient.Destroy()
+				logger.Print("Performing login again")
+				kclient.Login()
+				spnegoClient, _, realHost, err = spnegoproxy.BuildSPNClient(toProxyAsList, kclient, *spnServiceType)
+				if err != nil {
+					logger.Panic("Cannot get SPNEGOClient")
+				}
+				logger.Print("SPNEGOClient built successfully, moving on")
+				break
+			}
+			errorCount = 0                  // reset the error counter for the time being
+			logger.Printf("Now dealing with host %s for next connections\n", realHost)
+		}
+
 		conn, err := connListener.AcceptTCP()
 		if err != nil {
 			logger.Panic(err)
