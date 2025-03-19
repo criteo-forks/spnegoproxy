@@ -39,6 +39,7 @@ func main() {
 	realHosts := spnegoproxy.StartConsulGetService(consulClient, *proxy)
 	kclient := client.NewWithKeytab(*user, *realm, keytab, conf, client.Logger(logger), client.DisablePAFXFAST(*disablePaxFast))
 	kclient.Login()
+
 	spnegoClient, spnEnabled, realHost, err := spnegoproxy.BuildSPNClient(realHosts, kclient, *spnServiceType)
 
 	if err != nil {
@@ -80,13 +81,14 @@ func main() {
 	preFail := 0
 	defer connListener.Close()
 	for {
-		if errorCount > 1 {
-			logger.Print("Renewing SPN client with new host because we had more than 1 error")
+		if errorCount > 0 {
+			logger.Print("Renewing SPN client with new host because we had an error")
 			for {
 				logger.Print("Destroying old Kerberos client to force renewal")
 				kclient.Destroy()
 				logger.Print("Performing login again")
 				kclient.Login()
+				logger.Printf("New credentials for %s valid until: %s", kclient.Credentials.UserName(), kclient.Credentials.ValidUntil())
 				spnegoClient, _, realHost, err = spnegoproxy.BuildSPNClient(realHosts, kclient, *spnServiceType)
 				if err != nil && preFail <= ACCEPTABLE_CONSUL_ERRORS {
 					logger.Println("Cannot get SPN client for service after error, sleeping before we retry")

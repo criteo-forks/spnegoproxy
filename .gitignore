@@ -6,3 +6,4 @@ plain-proxy
 fixed-target-proxy
 consul-proxy
 *-static
+go.mod
