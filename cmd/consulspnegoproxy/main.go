@@ -112,7 +112,7 @@ func main() {
 		}
 		connListener.SetDeadline(time.Now().Add(deadlineDuration))
 		conn, err := connListener.AcceptTCP()
-		if err == os.ErrDeadlineExceeded {
+		if err == os.ErrDeadlineExceeded || os.IsTimeout(err) {
 			logger.Print("No new TCP connection, skipping.")
 			skipped += 1
 		} else if err != nil {

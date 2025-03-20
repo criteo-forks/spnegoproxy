@@ -21,6 +21,7 @@ fi
 
 RUNS=0
 while true; do
+set +e
 /spnego-proxy \
   -addr "${LISTEN_ADDRESS}" \
   -metrics-addr "${METRICS_ADDRESS}" \
@@ -35,5 +36,6 @@ while true; do
 if [ "$MAX_RUNS" = "$RUNS" ]; then
   exit 999
 fi
+set -e
 RUNS=$(($RUNS + 1))
 done
