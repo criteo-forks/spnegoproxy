@@ -83,8 +83,22 @@ func main() {
 	overallErrorCount := 0
 	preFail := 0
 	skipped := 0
+	watchdogChan := make(chan interface{})
 	defer connListener.Close()
+	go func(c chan interface{}) {
+
+		for {
+			select {
+			case <-c:
+				// logger.Print("Watchdog is happy")
+			case <-time.After(10 * time.Second):
+				logger.Print("Watchdog waited 10 seconds without news, panicking")
+				logger.Panic("Watchdog timed out.")
+			}
+		}
+	}(watchdogChan)
 	for {
+		watchdogChan <- nil // ensure watchdog is happy
 		if skipped >= 10 {
 			logger.Print("10 TCP connections skipped, exiting to renew")
 			os.Exit(2)

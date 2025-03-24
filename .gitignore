@@ -7,3 +7,4 @@ fixed-target-proxy
 consul-proxy
 *-static
 go.mod
+*.local.sh
