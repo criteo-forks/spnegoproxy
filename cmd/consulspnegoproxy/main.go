@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"log"
 	"net"
@@ -84,6 +85,10 @@ func main() {
 	skipped := 0
 	defer connListener.Close()
 	for {
+		if skipped >= 10 {
+			logger.Print("10 TCP connections skipped, exiting to renew")
+			os.Exit(2)
+		}
 		if errorCount > 0 {
 			logger.Print("Renewing SPN client with new host because we had an error")
 			for {
@@ -112,17 +117,15 @@ func main() {
 		}
 		connListener.SetDeadline(time.Now().Add(deadlineDuration))
 		conn, err := connListener.AcceptTCP()
-		if err == os.ErrDeadlineExceeded || os.IsTimeout(err) {
+		if err != nil && errors.Is(err, os.ErrDeadlineExceeded) {
 			logger.Print("No new TCP connection, skipping.")
 			skipped += 1
+			logger.Printf("skipped: %d\n", skipped)
+			continue
 		} else if err != nil {
 			logger.Panic(err)
 		} else {
 			skipped = 0
-		}
-		if skipped > 10 {
-			logger.Print("10 TCP connections skipped, exiting to renew")
-			os.Exit(2)
 		}
 
 		go spnegoproxy.HandleClient(conn, realHost, spnegoClient, &errorCount)
