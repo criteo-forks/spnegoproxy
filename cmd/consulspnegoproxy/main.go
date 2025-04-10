@@ -33,6 +33,23 @@ func main() {
 	debug := flag.Bool("debug", true, "turn on debugging")
 	disablePaxFast := flag.Bool("disable-pax-fast", false, "disable PAX fast, useful in some cases with Active Directory")
 	flag.Parse()
+
+	// start watchdog early
+	watchdogChan := make(chan interface{})
+	go func(c chan interface{}) {
+
+		for {
+			select {
+			case <-c:
+				// logger.Print("Watchdog-chan is happy")
+			case <-time.After(10 * time.Second):
+				logger.Print("Watchdog waited 10 seconds without getting news, panicking")
+				logger.Panic("Watchdog timed out.")
+			}
+		}
+	}(watchdogChan)
+
+	// now proceed with the app startup
 	spnegoproxy.DEBUGGING = *debug // enable or disable debugging
 	keytab, conf := spnegoproxy.LoadKrb5Config(keytabFile, cfgFile)
 
@@ -85,19 +102,6 @@ func main() {
 	skipped := 0
 
 	defer connListener.Close()
-	watchdogChan := make(chan interface{})
-	go func(c chan interface{}) {
-
-		for {
-			select {
-			case <-c:
-				// logger.Print("Watchdog-chan is happy")
-			case <-time.After(10 * time.Second):
-				logger.Print("Watchdog waited 10 seconds without news, panicking")
-				logger.Panic("Watchdog timed out.")
-			}
-		}
-	}(watchdogChan)
 	for {
 		watchdogChan <- nil // ensure watchdog-chan is happy
 		if skipped >= 10 {
