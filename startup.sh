@@ -1,6 +1,7 @@
 #!/bin/sh
 set -x -e
 MAX_RUNS=${MAX_RUNS:-"-1"}
+MONITOR_PATH=${MONITOR_PATH:-"/webhdfs/v1/?op=LISTSTATUS"}
 OPTIONS=""
 
 if [ "$DROP_USERNAME" = "true" ]; then
@@ -19,7 +20,17 @@ if [ "$DISABLE_PAX_FAST" = "true" ]; then
   OPTIONS="$OPTIONS -disable-pax-fast"
 fi
 
+healthcheck() {
+while true; do
+  sleep 5;
+  curl http://${LISTEN_ADDRESS}/${MONITOR_PATH} || break
+done
+echo "Seppuku"
+kill -HUP 1
+}
+
 RUNS=0
+healthcheck &
 while true; do
 set +e
 /spnego-proxy \
@@ -39,3 +50,4 @@ fi
 set -e
 RUNS=$(($RUNS + 1))
 done
+wait
