@@ -23,7 +23,7 @@ fi
 healthcheck() {
 while true; do
   sleep 5;
-  curl http://${LISTEN_ADDRESS}/${MONITOR_PATH} || break
+  wget -O /dev/null http://${LISTEN_ADDRESS}/${MONITOR_PATH} || break
 done
 echo "Seppuku"
 kill -HUP 1
