@@ -26,7 +26,8 @@ while true; do
   curl http://${LISTEN_ADDRESS}/${MONITOR_PATH} || break
 done
 echo "Seppuku"
-kill -HUP 1
+killall spnego-proxy
+kill -9 1
 }
 
 RUNS=0
