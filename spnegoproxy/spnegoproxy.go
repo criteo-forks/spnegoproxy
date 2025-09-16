@@ -197,8 +197,9 @@ func DropUsername() {
 }
 
 func demandDelegationTokenInResponse(res *http.Response) {
+	rawLoc := res.Header.Get("Location")
 	locationAddress, err := url.Parse(res.Header.Get("Location"))
-	if err != nil { // if you can't parse the Location header, I don't need to care
+	if err != nil || len(rawLoc) == 0 { // if you can't parse the Location header or there's none, I don't need to care
 		return
 	}
 	qsValues := locationAddress.Query()
