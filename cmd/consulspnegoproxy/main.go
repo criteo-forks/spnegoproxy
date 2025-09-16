@@ -30,6 +30,7 @@ func main() {
 	properUsername := flag.String("proper-username", "", "for WebHDFS, user.name value to force-set")
 	dropUsername := flag.Bool("drop-username", false, "drop user.name from all queries")
 	metricsAddrS := flag.String("metrics-addr", "", "optional address to expose a prometheus metrics endpoint")
+	demandDelegationToken := flag.Bool("demand-delegation-token", true, "demand delegation token in response Location headers")
 	debug := flag.Bool("debug", true, "turn on debugging")
 	disablePaxFast := flag.Bool("disable-pax-fast", false, "disable PAX fast, useful in some cases with Active Directory")
 	flag.Parse()
@@ -147,6 +148,9 @@ func main() {
 			skipped = 0
 		}
 
+		if *demandDelegationToken {
+			spnegoproxy.DemandDelegationTokenInResponse()
+		}
 		go spnegoproxy.HandleClient(conn, realHost, spnegoClient, &errorCount)
 		if MAXIMUM_OVERALL_ERRORS <= overallErrorCount {
 			logger.Fatalf("Reached error count %d > %d, exiting.\n", overallErrorCount, MAXIMUM_OVERALL_ERRORS)

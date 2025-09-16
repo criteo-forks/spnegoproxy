@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -195,6 +196,23 @@ func DropUsername() {
 	RegisterRequestInspectionCallback(dropUsername)
 }
 
+func demandDelegationTokenInResponse(res *http.Response) {
+	locationAddress, err := url.Parse(res.Header.Get("Location"))
+	if err != nil { // if you can't parse the Location header, I don't need to care
+		return
+	}
+	qsValues := locationAddress.Query()
+	if !qsValues.Has("delegation") {
+		log.Panicf("Location redirection query string has no delegation token %s\n(original response follows)\n%v", locationAddress, res)
+	} else {
+		debugprintf("Got delegation token in qsValues %v", qsValues)
+	}
+}
+
+func DemandDelegationTokenInResponse() {
+	RegisterResponseInspectionCallback(demandDelegationTokenInResponse)
+}
+
 func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, errCount *int) {
 
 	if *errCount > MAX_ERROR_COUNT {
@@ -283,6 +301,7 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 				} else {
 					*errCount = 0
 				}
+				handleResponseCallbacks(res)
 				// is that needed?
 				res.Header.Del("Www-Authenticate")
 				res.Header.Del("Set-Cookie")

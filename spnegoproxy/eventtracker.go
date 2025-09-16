@@ -142,11 +142,17 @@ func (events *SPNEGOProxyWebHDFSEventsTable) String() string {
 }
 
 type RequestInspectionCallback func(*http.Request)
+type ResponseInspectionCallback func(*http.Response)
 
 var requestInspectionCallback = []RequestInspectionCallback{}
+var responseInspectionCallback = []ResponseInspectionCallback{}
 
 func RegisterRequestInspectionCallback(cb RequestInspectionCallback) {
 	requestInspectionCallback = append(requestInspectionCallback, cb)
+}
+
+func RegisterResponseInspectionCallback(cb ResponseInspectionCallback) {
+	responseInspectionCallback = append(responseInspectionCallback, cb)
 }
 
 func EnableWebHDFSTracking(events WebHDFSEventChannel) {
@@ -156,5 +162,11 @@ func EnableWebHDFSTracking(events WebHDFSEventChannel) {
 func handleRequestCallbacks(req *http.Request) {
 	for i := 0; i < len(requestInspectionCallback); i++ {
 		requestInspectionCallback[i](req)
+	}
+}
+
+func handleResponseCallbacks(res *http.Response) {
+	for i := 0; i < len(responseInspectionCallback); i++ {
+		responseInspectionCallback[i](res)
 	}
 }
