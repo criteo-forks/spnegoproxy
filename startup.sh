@@ -1,5 +1,5 @@
 #!/bin/sh
-set -x -e
+set -e
 MAX_RUNS=${MAX_RUNS:-"-1"}
 MONITOR_PATH=${MONITOR_PATH:-"webhdfs/v1/?op=LISTSTATUS"}
 OPTIONS=""
@@ -24,7 +24,7 @@ healthcheck() {
 while true; do
   sleep 5;
   curl -o /dev/null -s -q http://${LISTEN_ADDRESS}/${MONITOR_PATH} || wget -O /dev/null -q http://${LISTEN_ADDRESS}/${MONITOR_PATH} || break
-done
+done 2> /dev/null
 echo "Seppuku"
 killall spnego-proxy
 kill -9 1

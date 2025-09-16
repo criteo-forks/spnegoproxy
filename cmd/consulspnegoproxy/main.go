@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"time"
@@ -12,7 +13,8 @@ import (
 	"github.com/matchaxnb/spnegoproxy/spnegoproxy"
 )
 
-var logger = log.New(os.Stderr, "", log.LstdFlags)
+// var logger = log.New(os.Stderr, "", log.LstdFlags)
+var logger *log.Logger
 
 const ACCEPTABLE_CONSUL_ERRORS = 1
 const MAXIMUM_OVERALL_ERRORS = 10
@@ -35,6 +37,11 @@ func main() {
 	disablePaxFast := flag.Bool("disable-pax-fast", false, "disable PAX fast, useful in some cases with Active Directory")
 	flag.Parse()
 
+	handler := slog.NewTextHandler(os.Stdout, nil)
+	bufferedLogger := spnegoproxy.NewBufferedLogger(handler, 30*time.Second, 100, 1024*1024*10)
+	logger = spnegoproxy.NewStdLogger(bufferedLogger)
+
+	spnegoproxy.SetLogger(logger)
 	// start watchdog early
 	watchdogChan := make(chan interface{})
 	go func(c chan interface{}) {

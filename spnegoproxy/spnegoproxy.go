@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,7 +23,9 @@ import (
 	"github.com/matchaxnb/gokrb5/v8/spnego"
 )
 
-var logger = log.New(os.Stderr, "[spnegoproxy]", log.LstdFlags)
+// var logger = log.New(os.Stderr, "[spnegoproxy]", log.LstdFlags)
+
+var logger *log.Logger
 var DEBUGGING bool = false
 
 const MAX_ERROR_COUNT = 20
@@ -45,6 +46,9 @@ func (e HostPort) f() string {
 	return fmt.Sprintf("%s:%d", e.Host, e.Port)
 }
 
+func SetLogger(l *log.Logger) {
+	logger = l
+}
 func _debugprintf(should bool, format string, a ...any) {
 	if !should {
 		return

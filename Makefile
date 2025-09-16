@@ -24,6 +24,11 @@ consul-proxy-static: spnegoproxy/*.go cmd/consulspnegoproxy/*.go
 	CGO_ENABLED=0 go build -o ../../consul-proxy-static main.go
 	strip consul-proxy-static
 
+testlogger: spnegoproxy/*.go cmd/testlogger/*.go
+	cd cmd/testlogger; \
+	CGO_ENABLED=0 go build -o ../../testlogger main.go
+	strip testlogger
+
 fixed-target-proxy: spnegoproxy/*.go cmd/fixedtargetproxy/*.go
 	cd cmd/fixedtargetproxy; \
 	go build -o ../../fixed-target-proxy main.go

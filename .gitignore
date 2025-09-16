@@ -5,6 +5,7 @@ Makefile.test
 plain-proxy
 fixed-target-proxy
 consul-proxy
+testlogger
 *-static
 go.mod
 *.local.sh
