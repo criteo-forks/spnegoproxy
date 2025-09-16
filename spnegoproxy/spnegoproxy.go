@@ -52,7 +52,7 @@ func _debugprintf(should bool, format string, a ...any) {
 	log.Printf(format, a...)
 }
 
-func debugprintf(format string, a ...any) {
+func Debugprintf(format string, a ...any) {
 	_debugprintf(DEBUGGING, format, a...)
 }
 
@@ -138,7 +138,7 @@ func StartConsulGetService(client *capi.Client, serviceName string) chan []HostP
 	messages := make(chan []HostPort, 8) // make that a buffered channel with maximum 8 messages in the backlog (in case we do something very wrong)
 	serviceFunc := func(client *capi.Client, serviceName string, messages chan []HostPort) {
 		for {
-			debugprintf("ConsulGetService: begin loop\n")
+			Debugprintf("ConsulGetService: begin loop\n")
 			healthyServices, meta, err := client.Health().Service(serviceName, "", true, &capi.QueryOptions{})
 			if err != nil {
 				logger.Printf("Cannot get healthy services for %#v (response meta: %#v) because of a consul error: %s", serviceName, meta, err)
@@ -146,7 +146,7 @@ func StartConsulGetService(client *capi.Client, serviceName string) chan []HostP
 			}
 			healthyStrings := make([]HostPort, len(healthyServices))
 			for i := range healthyServices {
-				debugprintf("Adding healthy service: %#v\n", healthyServices[i].Node.Meta["fqdn"])
+				Debugprintf("Adding healthy service: %#v\n", healthyServices[i].Node.Meta["fqdn"])
 				healthyStrings[i] = HostPort{healthyServices[i].Node.Meta["fqdn"], healthyServices[i].Service.Port}
 			}
 			// flush existing messages because they're no longer relevant
@@ -155,11 +155,11 @@ func StartConsulGetService(client *capi.Client, serviceName string) chan []HostP
 				counter := 0
 				for range messages {
 					counter += 1
-					debugprintf("ConsulGetService: Flushing message #%d", counter)
+					Debugprintf("ConsulGetService: Flushing message #%d", counter)
 				}
 			}
 			messages <- healthyStrings
-			debugprintf("ConsulGetService: added %d elements, now sleeping for 30 seconds\n", len(healthyStrings))
+			Debugprintf("ConsulGetService: added %d elements, now sleeping for 30 seconds\n", len(healthyStrings))
 			time.Sleep(time.Second * 30)
 		}
 	}
@@ -174,7 +174,7 @@ func enforceUserName(properUsername string, req *http.Request) {
 		q.Set("user.name", properUsername)
 		req.URL.RawQuery = q.Encode()
 	}
-	debugprintf("[DEBUG] EnforceUserName, now request is %s\n", req.URL.RawQuery)
+	Debugprintf("[DEBUG] EnforceUserName, now request is %s\n", req.URL.RawQuery)
 }
 
 func EnforceUserName(properUsername string) {
@@ -189,7 +189,7 @@ func dropUsername(req *http.Request) {
 	q := req.URL.Query()
 	q.Del("user.name")
 	req.URL.RawQuery = q.Encode()
-	debugprintf("[DEBUG] DropUsername, now request is %s", req.URL.RawQuery)
+	Debugprintf("[DEBUG] DropUsername, now request is %s", req.URL.RawQuery)
 }
 
 func DropUsername() {
@@ -206,7 +206,7 @@ func demandDelegationTokenInResponse(res *http.Response) {
 	if !qsValues.Has("delegation") {
 		log.Panicf("Location redirection query string has no delegation token %s\n(original response follows)\n%v", locationAddress, res)
 	} else {
-		debugprintf("Got delegation token in qsValues %v", qsValues)
+		Debugprintf("Got delegation token in qsValues %v", qsValues)
 	}
 }
 
@@ -220,8 +220,8 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 		log.Fatalf("Too many errors (%d), exiting", *errCount)
 	}
 
-	debugprintf("new client: %v", conn.RemoteAddr())
-	defer debugprintf("stop processing request for client: %v", conn.RemoteAddr())
+	Debugprintf("new client: %v", conn.RemoteAddr())
+	defer Debugprintf("stop processing request for client: %v", conn.RemoteAddr())
 
 	defer conn.Close()
 	proxyAddr, err := net.ResolveTCPAddr("tcp", proxyHost)
@@ -243,7 +243,7 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 	// get the SPNEGO token that we will use for this client
 
 	if spnegoCli == nil {
-		debugprintf("no SPNEGO client is set, so no Kerberos auth happening (this is fine)")
+		Debugprintf("no SPNEGO client is set, so no Kerberos auth happening (this is fine)")
 	}
 
 	processedCounter := 0
@@ -263,14 +263,14 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 		} else if errors.Is(err, io.EOF) {
 			// just a simple break
 
-			debugprintf("EOF reached, breaking")
+			Debugprintf("EOF reached, breaking")
 			break
 		} else if err != nil {
 			logger.Printf("Could not get request, will break: %v", err)
 			break
 		}
 
-		debugprintf("Read request: %s", req.URL)
+		Debugprintf("Read request: %s", req.URL)
 
 		req.Host = proxyHost
 		req.Header.Set("User-agent", "hadoop-proxy/0.1")
@@ -284,10 +284,10 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 			fromAddr, toAddr := from.RemoteAddr(), to.RemoteAddr()
 			// handle request: a simple passthrough
 			if !isResponse {
-				debugprintf("[%s] request %s -> %s\n", tag, fromAddr, toAddr)
+				Debugprintf("[%s] request %s -> %s\n", tag, fromAddr, toAddr)
 				io.Copy(to, from) // this is optimized but removes control
 			} else { // handle response, slightly more complex
-				debugprintf("[%s] response %s -> %s\n", tag, fromAddr, toAddr)
+				Debugprintf("[%s] response %s -> %s\n", tag, fromAddr, toAddr)
 				// read the from
 				resReader := bufio.NewReader(from)
 
@@ -296,7 +296,7 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 					logger.Panicf("[%s] Could not read response: %s", tag, err)
 				}
 				if res.StatusCode > 400 && res.StatusCode != 404 {
-					debugprintf("Bad status code %d -> %v", res.StatusCode, res)
+					Debugprintf("Bad status code %d -> %v", res.StatusCode, res)
 					*errCount += 1
 					pleaseBreak = true // latch pleaseBreak, this is going to stop processing.
 				} else {
@@ -317,9 +317,9 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 		go forward(proxyConn, conn, "proxied to local", true)
 		processedCounter += 1
 	}
-	debugprintf("Entering wg.Wait\n")
+	Debugprintf("Entering wg.Wait\n")
 	wg.Wait()
-	debugprintf("[ProcessedCounter] Done waiting. Handled %d requests\n", processedCounter)
+	Debugprintf("[ProcessedCounter] Done waiting. Handled %d requests\n", processedCounter)
 }
 
 func readRequestAndSetAuthorization(reqReader *bufio.Reader, spnegoCli *SPNEGOClient) (*http.Request, error) {

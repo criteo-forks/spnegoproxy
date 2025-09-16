@@ -10,6 +10,8 @@ fi
 
 if [ "$DEBUG" = "true" ]; then
   OPTIONS="$OPTIONS -debug"
+else
+  OPTIONS="$OPTIONS -debug false"
 fi
 
 if [ ! -z "$PROPER_USERNAME" ]; then

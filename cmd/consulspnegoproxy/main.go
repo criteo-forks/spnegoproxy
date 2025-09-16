@@ -31,7 +31,7 @@ func main() {
 	dropUsername := flag.Bool("drop-username", false, "drop user.name from all queries")
 	metricsAddrS := flag.String("metrics-addr", "", "optional address to expose a prometheus metrics endpoint")
 	demandDelegationToken := flag.Bool("demand-delegation-token", true, "demand delegation token in response Location headers")
-	debug := flag.Bool("debug", true, "turn on debugging")
+	debug := flag.Bool("debug", false, "turn on debugging")
 	disablePaxFast := flag.Bool("disable-pax-fast", false, "disable PAX fast, useful in some cases with Active Directory")
 	flag.Parse()
 
@@ -78,7 +78,7 @@ func main() {
 	eventChannel := make(spnegoproxy.WebHDFSEventChannel)
 	if len(*metricsAddrS) > 0 {
 		// we have a prometheus metrics endpoint
-		logger.Print("Starting metrics handler")
+		spnegoproxy.Debugprintf("Starting metrics handler")
 		spnegoproxy.EnableWebHDFSTracking(eventChannel)
 		spnegoproxy.ExposeMetrics(*metricsAddrS, eventChannel)
 		go spnegoproxy.ConsumeWebHDFSEventStream(eventChannel)
@@ -112,9 +112,9 @@ func main() {
 		if errorCount > 0 {
 			logger.Print("Renewing SPN client with new host because we had an error")
 			for {
-				logger.Print("Destroying old Kerberos client to force renewal")
+				spnegoproxy.Debugprintf("Destroying old Kerberos client to force renewal\n")
 				kclient.Destroy()
-				logger.Print("Performing login again")
+				spnegoproxy.Debugprintf("Performing login again\n")
 				kclient.Login()
 				logger.Printf("New credentials for %s valid until: %s", kclient.Credentials.UserName(), kclient.Credentials.ValidUntil())
 				spnegoClient, _, realHost, err = spnegoproxy.BuildSPNClient(realHosts, kclient, *spnServiceType)
@@ -133,14 +133,14 @@ func main() {
 			}
 			overallErrorCount += errorCount // transfer the error count to that overall counter
 			errorCount = 0                  // reset the error counter for the time being
-			logger.Printf("Now dealing with host %s for next connections\n", realHost)
+			spnegoproxy.Debugprintf("Now dealing with host %s for next connections\n", realHost)
 		}
 		connListener.SetDeadline(time.Now().Add(deadlineDuration))
 		conn, err := connListener.AcceptTCP()
 		if err != nil && errors.Is(err, os.ErrDeadlineExceeded) {
-			logger.Print("No new TCP connection, skipping.")
+			spnegoproxy.Debugprintf("No new TCP connection, skipping.")
 			skipped += 1
-			logger.Printf("skipped: %d\n", skipped)
+			spnegoproxy.Debugprintf("skipped: %d\n", skipped)
 			continue
 		} else if err != nil {
 			logger.Panic(err)
