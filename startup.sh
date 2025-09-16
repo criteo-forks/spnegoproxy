@@ -10,8 +10,6 @@ fi
 
 if [ "$DEBUG" = "true" ]; then
   OPTIONS="$OPTIONS -debug"
-else
-  OPTIONS="$OPTIONS -debug false"
 fi
 
 if [ ! -z "$PROPER_USERNAME" ]; then
@@ -25,7 +23,7 @@ fi
 healthcheck() {
 while true; do
   sleep 5;
-  curl http://${LISTEN_ADDRESS}/${MONITOR_PATH} || break
+  curl -o /dev/null -s -q http://${LISTEN_ADDRESS}/${MONITOR_PATH} || wget -O /dev/null -q http://${LISTEN_ADDRESS}/${MONITOR_PATH} || break
 done
 echo "Seppuku"
 killall spnego-proxy
