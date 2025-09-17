@@ -9,7 +9,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -200,6 +199,8 @@ func DropUsername() {
 	RegisterRequestInspectionCallback(dropUsername)
 }
 
+// theoretical implementation (slow AF)
+/*
 func demandDelegationTokenInResponse(res *http.Response) {
 	rawLoc := res.Header.Get("Location")
 	locationAddress, err := url.Parse(res.Header.Get("Location"))
@@ -211,6 +212,16 @@ func demandDelegationTokenInResponse(res *http.Response) {
 		log.Panicf("Location redirection query string has no delegation token %s\n(original response follows)\n%v", locationAddress, res)
 	} else {
 		Debugprintf("Got delegation token in qsValues %v", qsValues)
+	}
+}*/
+
+func demandDelegationTokenInResponse(res *http.Response) {
+	loc := res.Header.Get("Location")
+	if loc == "" {
+		return
+	}
+	if !strings.Contains(loc, "&delegation=") || strings.Contains(loc, "&delegation=&") {
+		log.Panicf("Location redirection query string has no delegation token %s\n(original response follows)\n%v", loc, res)
 	}
 }
 
@@ -284,13 +295,16 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 
 		forward := func(from, to *net.TCPConn, tag string, isResponse bool) {
 			defer wg.Done()
+			startTime := time.Now()
 			// defer to.CloseWrite()
 			fromAddr, toAddr := from.RemoteAddr(), to.RemoteAddr()
 			// handle request: a simple passthrough
 			if !isResponse {
+				defer updateRequestsPerformanceCounters(startTime)
 				Debugprintf("[%s] request %s -> %s\n", tag, fromAddr, toAddr)
 				io.Copy(to, from) // this is optimized but removes control
 			} else { // handle response, slightly more complex
+				defer updateResponsesPerformanceCounters(startTime)
 				Debugprintf("[%s] response %s -> %s\n", tag, fromAddr, toAddr)
 				// read the from
 				resReader := bufio.NewReader(from)
@@ -307,9 +321,6 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 					*errCount = 0
 				}
 				handleResponseCallbacks(res)
-				// is that needed?
-				res.Header.Del("Www-Authenticate")
-				res.Header.Del("Set-Cookie")
 				res.Write(to)
 			}
 			logger.Printf("[%s] written\n", tag)

@@ -32,13 +32,13 @@ func main() {
 	properUsername := flag.String("proper-username", "", "for WebHDFS, user.name value to force-set")
 	dropUsername := flag.Bool("drop-username", false, "drop user.name from all queries")
 	metricsAddrS := flag.String("metrics-addr", "", "optional address to expose a prometheus metrics endpoint")
-	demandDelegationToken := flag.Bool("demand-delegation-token", true, "demand delegation token in response Location headers")
+	demandDelegationToken := flag.Bool("demand-delegation-token", false, "demand delegation token in response Location headers")
 	debug := flag.Bool("debug", false, "turn on debugging")
 	disablePaxFast := flag.Bool("disable-pax-fast", false, "disable PAX fast, useful in some cases with Active Directory")
 	flag.Parse()
 
 	handler := slog.NewTextHandler(os.Stdout, nil)
-	bufferedLogger := spnegoproxy.NewBufferedLogger(handler, 30*time.Second, 100, 1024*1024*10)
+	bufferedLogger := spnegoproxy.NewBufferedLogger(handler, 30*time.Second, 3000, 1024*1024*10)
 	logger = spnegoproxy.NewStdLogger(bufferedLogger)
 
 	spnegoproxy.SetLogger(logger)

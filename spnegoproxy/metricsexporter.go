@@ -22,6 +22,7 @@ func handleMetrics(w http.ResponseWriter, r *http.Request) {
 	// ctx := r.Context()
 	logger.Print("Requested metrics")
 	io.WriteString(w, webHDFSEvents.String())
+	io.WriteString(w, performanceCountersTable.String())
 
 }
 

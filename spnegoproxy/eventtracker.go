@@ -141,6 +141,61 @@ func (events *SPNEGOProxyWebHDFSEventsTable) String() string {
 	return sb.String()
 }
 
+type PerformanceCountersTable struct {
+	requests_processed             int64
+	responses_processed            int64
+	loglines_processed             int64
+	average_request_processing_us  int64
+	average_response_processing_us int64
+	average_logger_processing_us   int64
+}
+
+func newPerformanceCountersTable() *PerformanceCountersTable {
+	return &PerformanceCountersTable{
+		requests_processed:             0,
+		responses_processed:            0,
+		loglines_processed:             0,
+		average_request_processing_us:  0,
+		average_response_processing_us: 0,
+		average_logger_processing_us:   0,
+	}
+}
+
+func updateRequestsPerformanceCounters(startTime time.Time) {
+	dur := time.Since(startTime)
+	performanceCountersTable.average_request_processing_us += dur.Microseconds()
+	performanceCountersTable.average_request_processing_us >>= 1 // the wise girl's /= 2
+	performanceCountersTable.requests_processed += 1
+}
+
+func updateResponsesPerformanceCounters(startTime time.Time) {
+	dur := time.Since(startTime)
+	performanceCountersTable.average_response_processing_us += dur.Microseconds()
+	performanceCountersTable.average_response_processing_us >>= 1
+	performanceCountersTable.responses_processed += 1
+}
+
+func updateLoggerPerformanceCounters(startTime time.Time) {
+	dur := time.Since(startTime)
+	performanceCountersTable.loglines_processed += 1
+	performanceCountersTable.average_logger_processing_us += dur.Microseconds()
+	performanceCountersTable.average_logger_processing_us >>= 1
+}
+
+func (perftable *PerformanceCountersTable) String() string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("average_request_processing_us: %d\n", perftable.average_request_processing_us))
+	sb.WriteString(fmt.Sprintf("average_response_processing_us: %d\n", perftable.average_response_processing_us))
+	sb.WriteString(fmt.Sprintf("average_logger_processing_us: %d\n", perftable.average_logger_processing_us))
+	sb.WriteString(fmt.Sprintf("requests_processed: %d\n", perftable.requests_processed))
+	sb.WriteString(fmt.Sprintf("responses_processed: %d\n", perftable.responses_processed))
+	sb.WriteString(fmt.Sprintf("loglines_processed: %d\n", perftable.loglines_processed))
+
+	return sb.String()
+}
+
+var performanceCountersTable = newPerformanceCountersTable()
+
 type RequestInspectionCallback func(*http.Request)
 type ResponseInspectionCallback func(*http.Response)
 

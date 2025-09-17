@@ -44,6 +44,7 @@ func NewBufferedLogger(handler slog.Handler, flushInterval time.Duration, maxLin
 }
 
 func (bl *BufferedLogger) Log(ctx context.Context, level slog.Level, msg string, attrs ...slog.Attr) {
+	defer updateLoggerPerformanceCounters(time.Now())
 	bl.mu.Lock()
 	defer bl.mu.Unlock()
 

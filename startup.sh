@@ -20,6 +20,10 @@ if [ "$DISABLE_PAX_FAST" = "true" ]; then
   OPTIONS="$OPTIONS -disable-pax-fast"
 fi
 
+if [ "$DEMAND_DELEGATION_TOKEN" = "true" ]; then
+  OPTIONS="$OPTIONS -demand-delegation-token"
+fi
+
 healthcheck() {
 while true; do
   sleep 5;
