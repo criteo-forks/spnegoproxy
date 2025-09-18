@@ -326,7 +326,7 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 				// read the from
 				resReader := bufio.NewReader(from)
 				peekedBuf, err := resReader.Peek(1024)
-				if err != io.EOF {
+				if err != io.EOF && err != nil {
 					logger.Panicf("[%s] Could not peek response: %s", tag, err)
 				}
 				res, err := http.ReadResponse(resReader, nil)
