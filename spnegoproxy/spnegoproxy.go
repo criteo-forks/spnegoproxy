@@ -216,7 +216,7 @@ func demandDelegationTokenInResponse(res *http.Response) {
 	}
 }*/
 
-func demandDelegationTokenInResponse(res *http.Response) {
+/*func demandDelegationTokenInResponse(res *http.Response) {
 	loc := res.Header.Get("Location")
 	if loc == "" {
 		return
@@ -224,9 +224,11 @@ func demandDelegationTokenInResponse(res *http.Response) {
 	if !strings.Contains(loc, "&delegation=") || strings.Contains(loc, "&delegation=&") {
 		log.Panicf("Location redirection query string has no delegation token %s\n(original response follows)\n%v", loc, res)
 	}
-}
+}*/
 
 func demandDelegationTokenInHeaders(headers *bytes.Reader) {
+	defer updateResponseCallbacksPerformanceCounters(time.Now())
+
 	buf, err := io.ReadAll(headers)
 	if err != nil {
 		return

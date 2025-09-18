@@ -112,6 +112,9 @@ func main() {
 	overallErrorCount := 0
 	preFail := 0
 	skipped := 0
+	if *demandDelegationToken {
+		spnegoproxy.DemandDelegationTokenInResponse()
+	}
 
 	defer connListener.Close()
 	for {
@@ -161,9 +164,6 @@ func main() {
 			skipped = 0
 		}
 
-		if *demandDelegationToken {
-			spnegoproxy.DemandDelegationTokenInResponse()
-		}
 		go spnegoproxy.HandleClient(conn, realHost, spnegoClient, &errorCount)
 		if MAXIMUM_OVERALL_ERRORS <= overallErrorCount {
 			logger.Fatalf("Reached error count %d > %d, exiting.\n", overallErrorCount, MAXIMUM_OVERALL_ERRORS)
