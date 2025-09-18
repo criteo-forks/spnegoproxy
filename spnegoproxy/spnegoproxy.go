@@ -217,6 +217,7 @@ func demandDelegationTokenInResponse(res *http.Response) {
 }*/
 
 /*func demandDelegationTokenInResponse(res *http.Response) {
+	defer updateResponseCallbacksPerformanceCounters(time.Now())
 	loc := res.Header.Get("Location")
 	if loc == "" {
 		return
