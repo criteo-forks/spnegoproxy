@@ -2,6 +2,7 @@ package spnegoproxy
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -52,7 +53,7 @@ func _debugprintf(should bool, format string, a ...any) {
 	if !should {
 		return
 	}
-	log.Printf(format, a...)
+	logger.Printf(format, a...)
 }
 
 func Debugprintf(format string, a ...any) {
@@ -225,8 +226,24 @@ func demandDelegationTokenInResponse(res *http.Response) {
 	}
 }
 
+func demandDelegationTokenInHeaders(headers *bytes.Reader) {
+	buf, err := io.ReadAll(headers)
+	if err != nil {
+		return
+	}
+	headers.Seek(0, io.SeekStart)
+	locIndex := bytes.Index(buf, []byte("\nLocation: "))
+	delegationIndex := bytes.Index(buf, []byte("&delegation="))
+	if locIndex == -1 {
+		return
+	}
+	if delegationIndex == -1 || delegationIndex < locIndex {
+		log.Panicf("Location redirection query string has no delegation token %s\n(original headers follows)\n%v", buf)
+	}
+}
 func DemandDelegationTokenInResponse() {
-	RegisterResponseInspectionCallback(demandDelegationTokenInResponse)
+	// RegisterResponseInspectionCallback(demandDelegationTokenInResponse)
+	RegisterHeaderInspectionCallback(demandDelegationTokenInHeaders)
 }
 
 func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, errCount *int) {
@@ -308,7 +325,10 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 				Debugprintf("[%s] response %s -> %s\n", tag, fromAddr, toAddr)
 				// read the from
 				resReader := bufio.NewReader(from)
-
+				peekedBuf, err := resReader.Peek(1024)
+				if err != io.EOF {
+					logger.Panicf("[%s] Could not peek response: %s", tag, err)
+				}
 				res, err := http.ReadResponse(resReader, nil)
 				if err != nil {
 					logger.Panicf("[%s] Could not read response: %s", tag, err)
@@ -320,7 +340,9 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 				} else {
 					*errCount = 0
 				}
+				headerReader := bytes.NewReader(peekedBuf)
 				handleResponseCallbacks(res)
+				handleHeadersCallbacks(headerReader)
 				res.Write(to)
 			}
 			logger.Printf("[%s] written\n", tag)

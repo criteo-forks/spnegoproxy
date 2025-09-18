@@ -1,6 +1,7 @@
 package spnegoproxy
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"strings"
@@ -148,6 +149,8 @@ type PerformanceCountersTable struct {
 	average_request_processing_us  int64
 	average_response_processing_us int64
 	average_logger_processing_us   int64
+	average_response_callbacks_us  int64
+	average_request_callbacks_us   int64
 }
 
 func newPerformanceCountersTable() *PerformanceCountersTable {
@@ -158,6 +161,8 @@ func newPerformanceCountersTable() *PerformanceCountersTable {
 		average_request_processing_us:  0,
 		average_response_processing_us: 0,
 		average_logger_processing_us:   0,
+		average_response_callbacks_us:  0,
+		average_request_callbacks_us:   0,
 	}
 }
 
@@ -182,11 +187,18 @@ func updateLoggerPerformanceCounters(startTime time.Time) {
 	performanceCountersTable.average_logger_processing_us >>= 1
 }
 
+func updateResponseCallbacksPerformanceCounters(startTime time.Time) {
+	dur := time.Since(startTime)
+	performanceCountersTable.average_response_callbacks_us += dur.Microseconds()
+	performanceCountersTable.average_response_callbacks_us >>= 1
+}
 func (perftable *PerformanceCountersTable) String() string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("average_request_processing_us: %d\n", perftable.average_request_processing_us))
 	sb.WriteString(fmt.Sprintf("average_response_processing_us: %d\n", perftable.average_response_processing_us))
 	sb.WriteString(fmt.Sprintf("average_logger_processing_us: %d\n", perftable.average_logger_processing_us))
+	sb.WriteString(fmt.Sprintf("average_response_callbacks_us: %d\n", perftable.average_response_callbacks_us))
+	sb.WriteString(fmt.Sprintf("average_request_callbacks_us: %d\n", perftable.average_request_callbacks_us))
 	sb.WriteString(fmt.Sprintf("requests_processed: %d\n", perftable.requests_processed))
 	sb.WriteString(fmt.Sprintf("responses_processed: %d\n", perftable.responses_processed))
 	sb.WriteString(fmt.Sprintf("loglines_processed: %d\n", perftable.loglines_processed))
@@ -198,9 +210,11 @@ var performanceCountersTable = newPerformanceCountersTable()
 
 type RequestInspectionCallback func(*http.Request)
 type ResponseInspectionCallback func(*http.Response)
+type HeaderInspectionCallback func(*bytes.Reader)
 
 var requestInspectionCallback = []RequestInspectionCallback{}
 var responseInspectionCallback = []ResponseInspectionCallback{}
+var responseHeadersInspectionCallback = []HeaderInspectionCallback{}
 
 func RegisterRequestInspectionCallback(cb RequestInspectionCallback) {
 	requestInspectionCallback = append(requestInspectionCallback, cb)
@@ -210,18 +224,31 @@ func RegisterResponseInspectionCallback(cb ResponseInspectionCallback) {
 	responseInspectionCallback = append(responseInspectionCallback, cb)
 }
 
+func RegisterHeaderInspectionCallback(cb HeaderInspectionCallback) {
+	responseHeadersInspectionCallback = append(responseHeadersInspectionCallback, cb)
+}
+
 func EnableWebHDFSTracking(events WebHDFSEventChannel) {
 	RegisterRequestInspectionCallback(func(r *http.Request) { ProcessWebHDFSRequestQuery(r, events) })
 }
 
 func handleRequestCallbacks(req *http.Request) {
+	defer updateRequestsPerformanceCounters(time.Now())
 	for i := 0; i < len(requestInspectionCallback); i++ {
 		requestInspectionCallback[i](req)
 	}
 }
 
 func handleResponseCallbacks(res *http.Response) {
+	defer updateResponseCallbacksPerformanceCounters(time.Now())
 	for i := 0; i < len(responseInspectionCallback); i++ {
 		responseInspectionCallback[i](res)
+	}
+}
+
+func handleHeadersCallbacks(res *bytes.Reader) {
+	defer updateResponseCallbacksPerformanceCounters(time.Now())
+	for i := 0; i < len(responseHeadersInspectionCallback); i++ {
+		responseHeadersInspectionCallback[i](res)
 	}
 }

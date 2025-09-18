@@ -35,27 +35,31 @@ func main() {
 	demandDelegationToken := flag.Bool("demand-delegation-token", false, "demand delegation token in response Location headers")
 	debug := flag.Bool("debug", false, "turn on debugging")
 	disablePaxFast := flag.Bool("disable-pax-fast", false, "disable PAX fast, useful in some cases with Active Directory")
+	disableWatchdog := flag.Bool("disable-watchdog", false, "disable the 10 seconds watchdog system")
+	logInterval := flag.Int("log-interval", 30, "interval in seconds between log outputs")
 	flag.Parse()
 
 	handler := slog.NewTextHandler(os.Stdout, nil)
-	bufferedLogger := spnegoproxy.NewBufferedLogger(handler, 30*time.Second, 3000, 1024*1024*10)
+	bufferedLogger := spnegoproxy.NewBufferedLogger(handler, time.Duration(*logInterval)*time.Second, 3000, 1024*1024*10)
 	logger = spnegoproxy.NewStdLogger(bufferedLogger)
 
 	spnegoproxy.SetLogger(logger)
 	// start watchdog early
 	watchdogChan := make(chan interface{})
-	go func(c chan interface{}) {
+	if !*disableWatchdog {
+		go func(c chan interface{}) {
 
-		for {
-			select {
-			case <-c:
-				// logger.Print("Watchdog-chan is happy")
-			case <-time.After(10 * time.Second):
-				logger.Print("Watchdog waited 10 seconds without getting news, panicking")
-				logger.Panic("Watchdog timed out.")
+			for {
+				select {
+				case <-c:
+					// logger.Print("Watchdog-chan is happy")
+				case <-time.After(10 * time.Second):
+					logger.Print("Watchdog waited 10 seconds without getting news, panicking")
+					logger.Panic("Watchdog timed out.")
+				}
 			}
-		}
-	}(watchdogChan)
+		}(watchdogChan)
+	}
 
 	// now proceed with the app startup
 	spnegoproxy.DEBUGGING = *debug // enable or disable debugging
@@ -111,7 +115,9 @@ func main() {
 
 	defer connListener.Close()
 	for {
-		watchdogChan <- nil // ensure watchdog-chan is happy
+		if !*disableWatchdog {
+			watchdogChan <- nil
+		} // ensure watchdog-chan is happy
 		if skipped >= 10 {
 			logger.Print("10 TCP connections skipped, exiting to renew")
 			os.Exit(2)
