@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/matchaxnb/gokrb5/v8/client"
 	"github.com/matchaxnb/gokrb5/v8/config"
+	"github.com/matchaxnb/gokrb5/v8/gssapi"
 	"github.com/matchaxnb/gokrb5/v8/keytab"
 	"github.com/matchaxnb/gokrb5/v8/spnego"
 )
@@ -31,15 +33,54 @@ var DEBUGGING bool = false
 const MAX_ERROR_COUNT = 20
 const PAUSE_TIME_WHEN_ERROR = time.Minute * 1
 const PAUSE_TIME_WHEN_NO_DATA = time.Millisecond * 300
+const DT_MEMOIZE_TIME = 30 * time.Second // prod: 24 * time.Hour
 
 type SPNEGOClient struct {
-	Client *spnego.SPNEGO
-	mu     sync.Mutex
+	Client      *spnego.SPNEGO
+	Destination string
+	Memo        *Memoizer[gssapi.ContextToken]
+	mu          sync.Mutex
 }
 
+type HadoopDT struct {
+	Token struct {
+		UrlString string `json:"urlString"`
+	}
+}
 type HostPort struct {
 	Host string
 	Port int
+}
+
+type StringAndError struct {
+	S string
+	E error
+}
+
+// Memoizer caches the token for a given duration
+type Memoizer[T any] struct {
+	mu       sync.Mutex
+	value    T
+	err      error
+	expireAt time.Time
+	duration time.Duration
+}
+
+func NewMemoizer[T any](duration time.Duration) *Memoizer[T] {
+	return &Memoizer[T]{duration: duration, expireAt: time.Now().Add(time.Hour * -1)}
+}
+
+func (m *Memoizer[T]) Get(fn func() (T, error)) (T, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// If cached value is still valid, return it
+	if time.Now().After(m.expireAt) && m.err == nil {
+		m.value, m.err = fn()
+		m.expireAt = time.Now().Add(m.duration)
+		logger.Println("Memoizer::Get -> recomputed values on", time.Now(), "will expire on", m.expireAt)
+	}
+	return m.value, m.err
 }
 
 func (e HostPort) f() string {
@@ -86,9 +127,9 @@ func BuildSPNClient(validHosts chan []HostPort, krbClient *client.Client, servic
 	}
 	logger.Printf("BuildSPNClient: SPN client built for known good host %s\n", spnHosts[0].f())
 	spnStr := fmt.Sprintf("%s/%s", serviceType, spnHosts[0].Host)
+	memoizer := NewMemoizer[gssapi.ContextToken](30 * time.Minute)
 	return &SPNEGOClient{
-		Client: spnego.SPNEGOClient(krbClient, spnStr),
-	}, spnStr, spnHosts[0].f(), nil
+		Client: spnego.SPNEGOClient(krbClient, spnStr), Destination: spnHosts[0].f(), Memo: memoizer}, spnStr, spnHosts[0].f(), nil
 }
 
 func LoadKrb5Config(keytabFile *string, cfgFile *string) (*keytab.Keytab, *config.Config) {
@@ -106,7 +147,11 @@ func LoadKrb5Config(keytabFile *string, cfgFile *string) (*keytab.Keytab, *confi
 	return keytab, conf
 }
 
-func (c *SPNEGOClient) GetToken() (string, error) {
+/*func (c *SPNEGOClient) GetAuthorizationToken() (string, error) {
+	return c.Memo.Get(c.GetTokenForReal)
+}*/
+
+func (c *SPNEGOClient) GetAuthorizationToken() (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := c.Client.AcquireCred(); err != nil {
@@ -249,7 +294,52 @@ func DemandDelegationTokenInResponse() {
 	RegisterHeaderInspectionCallback(demandDelegationTokenInHeaders)
 }
 
-func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, errCount *int) {
+func DelegationTokenWorker(spnegoCli *SPNEGOClient, delegTokenChan chan<- StringAndError) {
+	pleaseBreak := false
+	dtMemoizer := NewMemoizer[string](DT_MEMOIZE_TIME)
+	memoizeDelegationToken := func() (string, error) {
+		getDt := func() (string, error) {
+			delReq, err := http.NewRequest("GET", fmt.Sprintf("http://%s/webhdfs/v1/?op=GETDELEGATIONTOKEN", spnegoCli.Destination), nil)
+			if err != nil {
+				logger.Println(fmt.Errorf("DelegationTokenWorker: failed to build request: %v", err))
+				panic(err)
+			}
+
+			client := http.Client{CheckRedirect: nil}
+			token, err := spnegoCli.GetAuthorizationToken()
+			if err != nil {
+				logger.Println(fmt.Errorf("DelegationTokenWorker: failed to get authorization token: %v", err))
+				panic(err)
+			}
+
+			authHeader := "Negotiate " + token
+
+			delReq.Header.Set("Authorization", authHeader)
+			delResp, err := client.Do(delReq)
+			if err != nil {
+				logger.Println(fmt.Errorf("DelegationTokenWorker: failed to get Delegation token: %v", err))
+				return "", err
+			}
+			defer delResp.Body.Close()
+			delBody, _ := io.ReadAll(delResp.Body)
+			tokenObj := HadoopDT{}
+			json.Unmarshal(delBody, &tokenObj)
+			return tokenObj.Token.UrlString, nil
+		}
+		return dtMemoizer.Get(getDt)
+	}
+	for !pleaseBreak {
+		r, err := memoizeDelegationToken()
+		if err != nil {
+			logger.Println(fmt.Errorf("DelegationTokenWorker got error: %v", err))
+			pleaseBreak = true
+		}
+
+		delegTokenChan <- StringAndError{S: r, E: err}
+	}
+}
+
+func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, delegationToken <-chan StringAndError, errCount *int) {
 
 	if *errCount > MAX_ERROR_COUNT {
 		log.Fatalf("Too many errors (%d), exiting", *errCount)
@@ -286,7 +376,7 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 	pleaseBreak := false
 	for !pleaseBreak {
 
-		req, err := readRequestAndSetAuthorization(reqReader, spnegoCli)
+		req, err := readRequestAndSetDelegation(reqReader, delegationToken)
 		if err != nil && !errors.Is(err, io.EOF) {
 			logger.Printf("failed to read request or to get SPNEGO token: %v", err)
 			*errCount += 1
@@ -362,25 +452,21 @@ func HandleClient(conn *net.TCPConn, proxyHost string, spnegoCli *SPNEGOClient, 
 	Debugprintf("[ProcessedCounter] Done waiting. Handled %d requests\n", processedCounter)
 }
 
-func readRequestAndSetAuthorization(reqReader *bufio.Reader, spnegoCli *SPNEGOClient) (*http.Request, error) {
-	authHeader := ""
+func readRequestAndSetDelegation(reqReader *bufio.Reader, delegationToken <-chan StringAndError) (*http.Request, error) {
 	req, err := http.ReadRequest(reqReader)
 	if err != nil {
 		return nil, err
 	}
-	if spnegoCli != nil {
-		token, err := spnegoCli.GetToken()
-		if err != nil {
-			logger.Printf("failed to get SPNEGO token: %v", err)
-			time.Sleep(PAUSE_TIME_WHEN_ERROR)
-
-			return nil, err
+	if strings.Contains(req.URL.RawQuery, "&delegation=") {
+		return req, nil
+	} else {
+		sE := <-delegationToken
+		if sE.E != nil {
+			panic("Cannot get delegation token")
 		}
-		authHeader = "Negotiate " + token
+		if len(sE.S) > 0 {
+			req.URL.RawQuery += "&delegation=" + sE.S
+		}
+		return req, nil
 	}
-
-	if len(authHeader) > 0 {
-		req.Header.Set("Authorization", authHeader)
-	}
-	return req, nil
 }

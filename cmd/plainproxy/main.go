@@ -36,6 +36,12 @@ func main() {
 	}
 
 	eventChannel := make(spnegoproxy.WebHDFSEventChannel)
+	delegationTokenChannel := make(chan spnegoproxy.StringAndError, 3) // don't keep more delegation tokens in chan than necessary
+	go func() {                                                        // dummy delegation token generator
+		for {
+			delegationTokenChannel <- spnegoproxy.StringAndError{S: "", E: nil}
+		}
+	}()
 	if len(*metricsAddrS) > 0 {
 		// we have a prometheus metrics endpoint
 		logger.Print("Starting metrics handler")
@@ -56,6 +62,6 @@ func main() {
 		if err != nil {
 			logger.Panic(err)
 		}
-		go spnegoproxy.HandleClient(conn, *toProxy, nil, &errorCount)
+		go spnegoproxy.HandleClient(conn, *toProxy, nil, delegationTokenChannel, &errorCount)
 	}
 }

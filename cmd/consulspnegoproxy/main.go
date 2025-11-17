@@ -87,6 +87,10 @@ func main() {
 		logger.Panicf("Wrong TCP address %s -> %s", *addr, err)
 	}
 	eventChannel := make(spnegoproxy.WebHDFSEventChannel)
+	delegationTokenChannel := make(chan spnegoproxy.StringAndError, 3) // don't keep more delegation tokens in chan than necessary
+
+	go spnegoproxy.DelegationTokenWorker(spnegoClient, delegationTokenChannel)
+
 	if len(*metricsAddrS) > 0 {
 		// we have a prometheus metrics endpoint
 		spnegoproxy.Debugprintf("Starting metrics handler")
@@ -164,7 +168,7 @@ func main() {
 			skipped = 0
 		}
 
-		go spnegoproxy.HandleClient(conn, realHost, spnegoClient, &errorCount)
+		go spnegoproxy.HandleClient(conn, realHost, spnegoClient, delegationTokenChannel, &errorCount)
 		if MAXIMUM_OVERALL_ERRORS <= overallErrorCount {
 			logger.Fatalf("Reached error count %d > %d, exiting.\n", overallErrorCount, MAXIMUM_OVERALL_ERRORS)
 		}
