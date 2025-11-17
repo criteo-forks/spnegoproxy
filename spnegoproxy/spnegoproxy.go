@@ -20,7 +20,6 @@ import (
 
 	"github.com/matchaxnb/gokrb5/v8/client"
 	"github.com/matchaxnb/gokrb5/v8/config"
-	"github.com/matchaxnb/gokrb5/v8/gssapi"
 	"github.com/matchaxnb/gokrb5/v8/keytab"
 	"github.com/matchaxnb/gokrb5/v8/spnego"
 )
@@ -38,7 +37,6 @@ const DT_MEMOIZE_TIME = 23 * time.Hour // prod: 23 * time.Hour and dev: 30 * tim
 type SPNEGOClient struct {
 	Client      *spnego.SPNEGO
 	Destination string
-	Memo        *Memoizer[gssapi.ContextToken]
 	mu          sync.Mutex
 }
 
@@ -127,9 +125,8 @@ func BuildSPNClient(validHosts chan []HostPort, krbClient *client.Client, servic
 	}
 	logger.Printf("BuildSPNClient: SPN client built for known good host %s\n", spnHosts[0].f())
 	spnStr := fmt.Sprintf("%s/%s", serviceType, spnHosts[0].Host)
-	memoizer := NewMemoizer[gssapi.ContextToken](30 * time.Minute)
 	return &SPNEGOClient{
-		Client: spnego.SPNEGOClient(krbClient, spnStr), Destination: spnHosts[0].f(), Memo: memoizer}, spnStr, spnHosts[0].f(), nil
+		Client: spnego.SPNEGOClient(krbClient, spnStr), Destination: spnHosts[0].f()}, spnStr, spnHosts[0].f(), nil
 }
 
 func LoadKrb5Config(keytabFile *string, cfgFile *string) (*keytab.Keytab, *config.Config) {
@@ -146,10 +143,6 @@ func LoadKrb5Config(keytabFile *string, cfgFile *string) (*keytab.Keytab, *confi
 	}
 	return keytab, conf
 }
-
-/*func (c *SPNEGOClient) GetAuthorizationToken() (string, error) {
-	return c.Memo.Get(c.GetTokenForReal)
-}*/
 
 func (c *SPNEGOClient) GetAuthorizationToken() (string, error) {
 	c.mu.Lock()
