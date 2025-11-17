@@ -33,7 +33,7 @@ var DEBUGGING bool = false
 const MAX_ERROR_COUNT = 20
 const PAUSE_TIME_WHEN_ERROR = time.Minute * 1
 const PAUSE_TIME_WHEN_NO_DATA = time.Millisecond * 300
-const DT_MEMOIZE_TIME = 30 * time.Second // prod: 24 * time.Hour
+const DT_MEMOIZE_TIME = 23 * time.Hour // prod: 23 * time.Hour and dev: 30 * time.Second
 
 type SPNEGOClient struct {
 	Client      *spnego.SPNEGO
